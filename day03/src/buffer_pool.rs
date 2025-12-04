@@ -1,11 +1,54 @@
 use std::collections::HashMap;
 
 use anyhow::{bail, Result};
+use indexmap::IndexSet;
 
 use crate::disk::DiskManager;
 use crate::page::{Page, PAGE_SIZE};
 
 const BUFFER_POOL_SIZE: usize = 3; // small for testing
+
+// Replacer trait for page replacement policies
+pub trait Replacer {
+    // Find a victim frame to evict
+    fn victim(&self) -> Option<usize>;
+    // Mark a frame as pinned (not evictable)
+    fn pin(&mut self, frame_id: usize);
+    // Mark a frame as unpinned (evictable)
+    fn unpin(&mut self, frame_id: usize);
+}
+
+pub struct LruReplacer {
+    order: IndexSet<usize>, // Maintains insertion order, O(1) insert/remove
+    pinned: Vec<bool>,
+}
+
+impl LruReplacer {
+    pub fn new(size: usize) -> Self {
+        LruReplacer {
+            order: IndexSet::new(),
+            pinned: vec![true; size], // Initially all frames are considered pinned (empty)
+        }
+    }
+}
+
+impl Replacer for LruReplacer {
+    fn victim(&self) -> Option<usize> {
+        // Find first unpinned frame (oldest in order)
+        self.order.iter().find(|&&id| !self.pinned[id]).copied()
+    }
+
+    fn pin(&mut self, frame_id: usize) {
+        self.pinned[frame_id] = true;
+        // Move to end (most recently used)
+        self.order.shift_remove(&frame_id);
+        self.order.insert(frame_id);
+    }
+
+    fn unpin(&mut self, frame_id: usize) {
+        self.pinned[frame_id] = false;
+    }
+}
 
 struct Frame {
     page: Page,
@@ -25,16 +68,21 @@ impl Frame {
     }
 }
 
-pub struct BufferPoolManager {
+pub struct BufferPoolManager<R: Replacer = LruReplacer> {
     frames: Vec<Frame>,
     page_table: HashMap<u32, usize>, // page_id -> frame_id
     disk_manager: DiskManager,
-    // LRU: track access order (most recent at the end)
-    lru_list: Vec<usize>,
+    replacer: R,
 }
 
-impl BufferPoolManager {
+impl BufferPoolManager<LruReplacer> {
     pub fn new(disk_manager: DiskManager) -> Self {
+        Self::with_replacer(disk_manager, LruReplacer::new(BUFFER_POOL_SIZE))
+    }
+}
+
+impl<R: Replacer> BufferPoolManager<R> {
+    pub fn with_replacer(disk_manager: DiskManager, replacer: R) -> Self {
         let mut frames = Vec::with_capacity(BUFFER_POOL_SIZE);
         for _ in 0..BUFFER_POOL_SIZE {
             frames.push(Frame::new());
@@ -43,28 +91,17 @@ impl BufferPoolManager {
             frames,
             page_table: HashMap::new(),
             disk_manager,
-            lru_list: Vec::new(),
+            replacer,
         }
-    }
-
-    fn find_victim(&self) -> Option<usize> {
-        // Find unpinned frame using LRU (oldest first)
-        self.lru_list
-            .iter()
-            .find(|&&frame_id| self.frames[frame_id].pin_count == 0)
-            .copied()
-    }
-
-    fn update_lru(&mut self, frame_id: usize) {
-        // Move frame_id to end of LRU list (most recently used)
-        self.lru_list.retain(|&id| id != frame_id);
-        self.lru_list.push(frame_id);
     }
 
     fn evict(&mut self, frame_id: usize) -> Result<()> {
         let frame = &mut self.frames[frame_id];
         if let Some(old_page_id) = frame.page_id {
-            println!("[BufferPool] Evicting page {old_page_id} (dirty: {})", frame.is_dirty);
+            println!(
+                "[BufferPool] Evicting page {old_page_id} (dirty: {})",
+                frame.is_dirty
+            );
             if frame.is_dirty {
                 self.disk_manager.write_page(old_page_id, &frame.page.data)?;
             }
@@ -80,17 +117,23 @@ impl BufferPoolManager {
         // Check if already in buffer pool
         if let Some(&frame_id) = self.page_table.get(&page_id) {
             self.frames[frame_id].pin_count += 1;
-            self.update_lru(frame_id);
+            self.replacer.pin(frame_id);
             return Ok(&mut self.frames[frame_id].page);
         }
 
         // Find a frame to use
         let frame_id = if self.page_table.len() < BUFFER_POOL_SIZE {
             // Find empty frame
-            self.frames.iter().position(|f| f.page_id.is_none()).unwrap()
+            self.frames
+                .iter()
+                .position(|f| f.page_id.is_none())
+                .unwrap()
         } else {
             // Need to evict
-            let victim = self.find_victim().ok_or_else(|| anyhow::anyhow!("no victim frame"))?;
+            let victim = self
+                .replacer
+                .victim()
+                .ok_or_else(|| anyhow::anyhow!("no victim frame"))?;
             self.evict(victim)?;
             victim
         };
@@ -107,16 +150,22 @@ impl BufferPoolManager {
         frame.is_dirty = false;
 
         self.page_table.insert(page_id, frame_id);
-        self.update_lru(frame_id);
+        self.replacer.pin(frame_id);
 
         Ok(&mut self.frames[frame_id].page)
     }
 
     pub fn new_page(&mut self) -> Result<(u32, &mut Page)> {
         let frame_id = if self.page_table.len() < BUFFER_POOL_SIZE {
-            self.frames.iter().position(|f| f.page_id.is_none()).unwrap()
+            self.frames
+                .iter()
+                .position(|f| f.page_id.is_none())
+                .unwrap()
         } else {
-            let victim = self.find_victim().ok_or_else(|| anyhow::anyhow!("no victim frame"))?;
+            let victim = self
+                .replacer
+                .victim()
+                .ok_or_else(|| anyhow::anyhow!("no victim frame"))?;
             self.evict(victim)?;
             victim
         };
@@ -131,7 +180,7 @@ impl BufferPoolManager {
         frame.is_dirty = true;
 
         self.page_table.insert(page_id, frame_id);
-        self.update_lru(frame_id);
+        self.replacer.pin(frame_id);
 
         Ok((page_id, &mut self.frames[frame_id].page))
     }
@@ -143,6 +192,9 @@ impl BufferPoolManager {
                 bail!("page {page_id} is not pinned");
             }
             frame.pin_count -= 1;
+            if frame.pin_count == 0 {
+                self.replacer.unpin(frame_id);
+            }
             if is_dirty {
                 frame.is_dirty = true;
             }
