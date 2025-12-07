@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 mod analyzer;
 mod ast;
 mod buffer_pool;
@@ -9,7 +7,6 @@ mod executor;
 mod lexer;
 mod page;
 mod parser;
-mod table;
 mod tuple;
 
 use anyhow::Result;
@@ -48,7 +45,11 @@ fn main() -> Result<()> {
     println!("Inserting data...");
     execute_sql("INSERT INTO users VALUES (1, 'Alice')", &catalog, &mut bpm)?;
     execute_sql("INSERT INTO users VALUES (2, 'Bob')", &catalog, &mut bpm)?;
-    execute_sql("INSERT INTO users VALUES (3, 'Charlie')", &catalog, &mut bpm)?;
+    execute_sql(
+        "INSERT INTO users VALUES (3, 'Charlie')",
+        &catalog,
+        &mut bpm,
+    )?;
     execute_sql("INSERT INTO users VALUES (10, 'Dave')", &catalog, &mut bpm)?;
     execute_sql("INSERT INTO users VALUES (20, 'Eve')", &catalog, &mut bpm)?;
     println!("Inserted 5 rows.\n");

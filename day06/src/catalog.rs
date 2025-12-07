@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::tuple::{Column, DataType};
 
 #[derive(Debug, Clone)]
@@ -56,10 +54,12 @@ impl Catalog {
 }
 
 impl TableDef {
+    #[allow(dead_code)]
     pub fn get_column(&self, name: &str) -> Option<&ColumnDef> {
         self.columns.iter().find(|c| c.name == name)
     }
 
+    #[allow(dead_code)]
     pub fn get_column_id(&self, name: &str) -> Option<usize> {
         self.columns.iter().position(|c| c.name == name)
     }

@@ -14,6 +14,7 @@ use crate::tuple::DataType;
 pub enum TableSource {
     BaseTable {
         table_id: usize,
+        #[allow(dead_code)]
         table_name: String,
     },
 }
@@ -23,11 +24,13 @@ pub enum TableSource {
 pub struct OutputColumn {
     pub name: String,
     pub data_type: DataType,
+    #[allow(dead_code)]
     pub nullable: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct RangeTableEntry {
+    #[allow(dead_code)]
     pub rte_index: usize,
     pub source: TableSource,
     pub output_columns: Vec<OutputColumn>,
@@ -45,6 +48,7 @@ impl RangeTableEntry {
 pub enum AnalyzedStatement {
     Select(AnalyzedSelectStatement),
     Insert(AnalyzedInsertStatement),
+    #[allow(dead_code)]
     CreateTable(AnalyzedCreateTableStatement),
 }
 
@@ -59,30 +63,37 @@ pub struct AnalyzedSelectStatement {
 #[derive(Debug, Clone)]
 pub struct AnalyzedSelectItem {
     pub expr: AnalyzedExpr,
+    #[allow(dead_code)]
     pub alias: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct AnalyzedColumnRef {
+    #[allow(dead_code)]
     pub rte_index: usize,
     pub column_index: usize,
+    #[allow(dead_code)]
     pub column_name: String,
     pub data_type: DataType,
 }
 
 #[derive(Debug, Clone)]
 pub struct AnalyzedInsertStatement {
+    #[allow(dead_code)]
     pub table_id: usize,
+    #[allow(dead_code)]
     pub table_name: String,
     pub values: Vec<AnalyzedExpr>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct AnalyzedCreateTableStatement {
     pub table_name: String,
     pub columns: Vec<AnalyzedColumnDef>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct AnalyzedColumnDef {
     pub name: String,
@@ -133,6 +144,7 @@ impl AnalyzedExpr {
 
 #[derive(Debug, Clone)]
 struct ScopeEntry {
+    #[allow(dead_code)]
     name: String,
     rte_index: usize,
 }
