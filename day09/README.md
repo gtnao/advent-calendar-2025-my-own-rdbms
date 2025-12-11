@@ -1,4 +1,4 @@
-# Day 08: DELETE/UPDATE Statements + Multi-threaded Connections
+# Day 09: Transaction (BEGIN/COMMIT/ROLLBACK)
 
 ## Running the Server
 
@@ -18,20 +18,35 @@ psql -h localhost -p 5433
 -- Insert data
 INSERT INTO users VALUES (1, 'Alice');
 INSERT INTO users VALUES (2, 'Bob');
-INSERT INTO users VALUES (3, 'Charlie');
 
 -- Select all
 SELECT * FROM users;
 
--- Delete a specific row
-DELETE FROM users WHERE id = 2;
+-- Transaction: INSERT with ROLLBACK
+BEGIN;
+INSERT INTO users VALUES (3, 'Charlie');
+SELECT * FROM users;  -- Shows Alice, Bob, Charlie
+ROLLBACK;
+SELECT * FROM users;  -- Shows Alice, Bob (Charlie is gone)
 
--- Verify deletion
-SELECT * FROM users;
+-- Transaction: DELETE with ROLLBACK
+BEGIN;
+DELETE FROM users WHERE id = 1;
+SELECT * FROM users;  -- Shows only Bob
+ROLLBACK;
+SELECT * FROM users;  -- Shows Alice, Bob (Alice is restored)
 
--- Update a row
+-- Transaction: UPDATE with ROLLBACK
+BEGIN;
 UPDATE users SET name = 'Alice Updated' WHERE id = 1;
+SELECT * FROM users;  -- Shows Alice Updated, Bob
+ROLLBACK;
+SELECT * FROM users;  -- Shows Alice, Bob (original name restored)
 
--- Verify update
-SELECT * FROM users;
+-- Transaction: COMMIT
+BEGIN;
+INSERT INTO users VALUES (3, 'Charlie');
+DELETE FROM users WHERE id = 2;
+COMMIT;
+SELECT * FROM users;  -- Shows Alice, Charlie (changes are permanent)
 ```
